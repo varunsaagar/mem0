@@ -26,126 +26,86 @@ System: Retrieves relevant memories and responds
 
 ```mermaid
 graph TD
-    A[User Input: "I love running outdoors but hate gyms. I prefer morning workouts."] --> B[Memory.add() - mem0/memory/main.py:200-400]
+    A[User Input] --> B[Memory.add()]
     B --> C[parse_messages()]
-    C --> D[_build_filters_and_metadata user_id="alice"]
-    D --> E[LLM CALL #1 - Fact Extraction]
+    C --> D[build_filters_and_metadata]
+    D --> E[LLM Call: Fact Extraction]
     
-    E --> F[LLM Provider - mem0/llms/openai.py:80-125]
-    F --> G[client.chat.completions.create response_format="json"]
-    G --> H["LLM Response: {facts: ['Loves running outdoors', 'Hates going to gym', 'Prefers morning workouts']}"]
+    E --> F[LLM Provider]
+    F --> G[Extract Facts JSON]
+    G --> H[Loop: For each fact]
     
-    H --> I[Loop: For each extracted fact]
-    I --> J[EMBEDDING CALL #1 - Encode New Memory]
-    J --> K[Embedding Model - mem0/embeddings/openai.py:40-50]
-    K --> L[text.replace newline with space]
-    L --> M[client.embeddings.create model="text-embedding-3-small"]
-    M --> N[Return: [0.1, 0.2, ..., 0.8] 1536 dimensions]
+    H --> I[Embedding Call: Encode Memory]
+    I --> J[Get Text Embedding]
+    J --> K[Vector Search: Check Existing]
     
-    N --> O[VECTOR SEARCH - Check Existing]
-    O --> P[Vector Store - mem0/vector_stores/pinecone.py:190-230]
-    P --> Q[query_params = {vector: vectors, top_k: 5, filter: {user_id: "alice"}}]
-    Q --> R[index.query **query_params]
-    R --> S["Return: [{id: 'existing_mem_1', score: 0.3, metadata: {...}}]"]
+    K --> L[Query Vector Store]
+    L --> M[LLM Call: Memory Operations]
+    M --> N[Decide: ADD/UPDATE/DELETE]
     
-    S --> T[LLM CALL #2 - Memory Operations Decision]
-    T --> U[LLM Provider - Analyze: ADD vs UPDATE vs DELETE]
-    U --> V["LLM Response: {memory: [{text: 'Loves running outdoors', event: 'ADD'}, {text: 'Prefers morning workouts', event: 'ADD'}]}"]
+    N --> O{Event = ADD?}
+    O -->|Yes| P[Embedding Call: Final Storage]
+    O -->|No| Q[Handle UPDATE/DELETE]
     
-    V --> W[Loop: For each memory operation]
-    W --> X{Event = "ADD"?}
-    X -->|Yes| Y[EMBEDDING CALL #2 - Final Storage Encoding]
-    X -->|No| Z[Handle UPDATE/DELETE]
+    P --> R[Vector Store: Insert]
+    R --> S[History Storage: SQLite]
+    S --> T{Graph Store Enabled?}
     
-    Y --> AA[VECTOR STORE - Insert Memory]
-    AA --> BB[Vector Store - mem0/vector_stores/pinecone.py:140-180]
-    BB --> CC[Batch upsert with metadata user_id="alice", data="Loves running outdoors"]
-    CC --> DD[HISTORY STORAGE - SQLite]
-    DD --> EE[Store operation history]
+    T -->|Yes| U[Graph Operations]
+    T -->|No| V[Return Results]
     
-    EE --> FF{Graph Store Enabled?}
-    FF -->|Yes| GG[GRAPH OPERATIONS]
-    FF -->|No| HH[Return Results]
+    U --> W[LLM Call: Entity Extraction]
+    W --> X[LLM Call: Relationship Extraction]
+    X --> Y[Embedding Call: Node Embeddings]
+    Y --> Z[Neo4j Operations]
+    Z --> V
     
-    GG --> II[LLM CALL #3 - Entity Extraction]
-    II --> JJ["LLM Response: {entities: [{entity: 'alice', type: 'person'}, {entity: 'running', type: 'activity'}]}"]
-    JJ --> KK[LLM CALL #4 - Relationship Extraction]
-    KK --> LL["LLM Response: {entities: [{source: 'alice', relationship: 'ENJOYS', destination: 'running'}]}"]
-    
-    LL --> MM[EMBEDDING CALL #3 - Node Embeddings]
-    MM --> NN[embed "alice" and "running"]
-    NN --> OO[NEO4J OPERATIONS]
-    OO --> PP[MERGE alice:Person name: "alice", embedding: alice_embedding]
-    PP --> QQ[MERGE running:Activity name: "running", embedding: running_embedding]
-    QQ --> RR[MERGE alice-[r:ENJOYS]->running]
-    
-    RR --> HH
-    Z --> HH
-    HH --> SS["Return: {results: [{id: 'uuid1', memory: 'Loves running outdoors', event: 'ADD'}]}"]
+    Q --> V
     
     style A fill:#e1f5fe
     style E fill:#fff3e0
-    style J fill:#f3e5f5
-    style O fill:#e8f5e8
-    style T fill:#fff3e0
-    style AA fill:#e8f5e8
-    style GG fill:#fce4ec
-    style II fill:#fff3e0
-    style MM fill:#f3e5f5
+    style I fill:#f3e5f5
+    style K fill:#e8f5e8
+    style M fill:#fff3e0
+    style R fill:#e8f5e8
+    style U fill:#fce4ec
 ```
 
 #### **Step 2: Memory Search/Retrieval Flow**
 
 ```mermaid
 graph TD
-    A[User Query: search "What workouts do I enjoy?" user_id="alice"] --> B[Memory.search() - mem0/memory/main.py:612-688]
-    B --> C[_build_filters_and_metadata user_id="alice"]
-    C --> D[EMBEDDING CALL #4 - Query Encoding]
+    A[User Query] --> B[Memory.search()]
+    B --> C[build_filters_and_metadata]
+    C --> D[Embedding Call: Query Encoding]
     
-    D --> E[Embedding Model - mem0/embeddings/openai.py:40-50]
-    E --> F[Optimize for search context]
-    F --> G[Return: query_vector [0.3, 0.1, ..., 0.9]]
+    D --> E[Get Query Vector]
+    E --> F[Vector Similarity Search]
+    F --> G[Apply User Filters]
     
-    G --> H[VECTOR SIMILARITY SEARCH]
-    H --> I[Vector Store - mem0/vector_stores/pinecone.py:190-230]
-    I --> J[Cosine similarity: 2 * dot_product - 1]
-    J --> K[Apply filters: user_id = "alice"]
-    K --> L[ORDER BY similarity DESC LIMIT 100]
-    L --> M["Return: [{memory: 'Loves running outdoors', score: 0.89}, {memory: 'Prefers morning workouts', score: 0.76}]"]
+    G --> H[Cosine Similarity Calculation]
+    H --> I[Order by Similarity DESC]
+    I --> J{Graph Search Enabled?}
     
-    M --> N{Graph Search Enabled?}
-    N -->|Yes| O[GRAPH SEARCH OPERATIONS]
-    N -->|No| P[Combine Results]
+    J -->|Yes| K[Graph Search Operations]
+    J -->|No| L[Combine Results]
     
-    O --> Q[Graph Store - search "What workouts do I enjoy?" filters={user_id: "alice"}]
-    Q --> R[LLM CALL #5 - Entity Extraction for Search]
-    R --> S["LLM Response: {entities: [{entity: 'alice', type: 'person'}, {entity: 'workouts', type: 'activity'}]}"]
+    K --> M[LLM Call: Entity Extraction]
+    M --> N[Embedding Call: Graph Nodes]
+    N --> O[Neo4j Vector Similarity]
+    O --> P[BM25 Reranking]
+    P --> L
     
-    S --> T[EMBEDDING CALL #5 - Graph Node Search]
-    T --> U[embed "alice" and "workouts"]
-    U --> V[NEO4J VECTOR SIMILARITY]
-    V --> W[MATCH n:__Entity__ WHERE n.user_id = "alice"]
-    W --> X[WITH n, vector.similarity.cosine n.embedding, $embedding AS sim]
-    X --> Y[WHERE sim >= 0.7 MATCH n-[r]->m RETURN n.name, type r, m.name]
-    Y --> Z["Return: [{source: 'alice', relationship: 'ENJOYS', destination: 'running'}]"]
-    
-    Z --> AA[BM25 RERANKING]
-    AA --> BB[Tokenize query + rerank graph results]
-    BB --> CC[BM25Okapi search_sequences]
-    CC --> DD[get_top_n tokenized_query, sequences, n=5]
-    DD --> EE[Return: Reranked results]
-    
-    EE --> P
-    P --> FF[Apply threshold filtering if configured]
-    FF --> GG["Return: {results: [{memory: 'Loves running outdoors', score: 0.89}], entities: [...]}"]
+    L --> Q[Apply Threshold Filtering]
+    Q --> R[Return Results]
     
     style A fill:#e1f5fe
     style D fill:#f3e5f5
-    style H fill:#e8f5e8
-    style O fill:#fce4ec
-    style R fill:#fff3e0
-    style T fill:#f3e5f5
-    style AA fill:#e0f2f1
+    style F fill:#e8f5e8
+    style K fill:#fce4ec
+    style M fill:#fff3e0
+    style N fill:#f3e5f5
+    style P fill:#e0f2f1
 ```
 
 ### Edge Cases Handled
@@ -197,63 +157,46 @@ System: Retrieves relevant document chunks, generates contextual response
 
 ```mermaid
 graph TD
-    A[RAG System Initialization] --> B[Load fitness documents]
-    B --> C[Tiktoken - create_chunks documents, chunk_size=500]
-    C --> D[Tiktoken - evaluation/src/rag.py:120-150]
-    D --> E[encoding = tiktoken.encoding_for_model "text-embedding-3-small"]
-    E --> F[tokens = encoding.encode documents]
+    A[RAG System Init] --> B[Load Documents]
+    B --> C[Tiktoken: Create Chunks]
+    C --> D[Encoding for Model]
+    D --> E[Tokenize Documents]
     
-    F --> G[Loop: For each chunk 500 tokens]
-    G --> H[chunk_tokens = tokens[i:i+500]]
-    H --> I[chunk_text = encoding.decode chunk_tokens]
-    I --> J[EMBEDDING CALL #1 - Document Indexing]
+    E --> F[Loop: For each 500 tokens]
+    F --> G[Create Chunk Text]
+    G --> H[Embedding Call: Document Indexing]
     
-    J --> K[Embedding Model - evaluation/src/rag.py:70-75]
-    K --> L[client.embeddings.create input=[chunk_text]]
-    L --> M[Return: chunk_embedding [0.1, 0.2, ..., 0.8]]
+    H --> I[Get Chunk Embedding]
+    I --> J[Vector Storage: Store Chunk]
+    J --> K{More Chunks?}
     
-    M --> N[VECTOR STORAGE - Document Chunks]
-    N --> O[Vector Store - store_chunk embedding, metadata={doc_id: X, chunk_id: Y}]
-    O --> P[Stored successfully]
+    K -->|Yes| F
+    K -->|No| L[Query Processing Phase]
     
-    P --> Q{More chunks?}
-    Q -->|Yes| G
-    Q -->|No| R[Query Processing Phase]
+    L --> M[User Query Input]
+    M --> N[Embedding Call: Query Encoding]
+    N --> O[Get Query Vector]
     
-    R --> S[User Query: "What's the best cardio workout for weight loss?"]
-    S --> T[EMBEDDING CALL #2 - Query Encoding]
-    T --> U[Embedding Model - calculate_embedding query]
-    U --> V[Optimize query embedding for retrieval]
-    V --> W[Return: query_embedding [0.3, 0.1, ..., 0.9]]
+    O --> P[Vector Similarity Search]
+    P --> Q[Calculate Similarities]
+    Q --> R{Single or Multi Chunk?}
     
-    W --> X[VECTOR SIMILARITY SEARCH]
-    X --> Y[Vector Store - search query_embedding, k=5]
-    Y --> Z[Vector Store - evaluation/src/rag.py:80-110]
-    Z --> AA[similarities = [cosine_sim query_emb, chunk_emb for chunk_emb in embeddings]]
+    R -->|Single| S[Get Top Match]
+    R -->|Multi| T[Get Top K Matches]
     
-    AA --> BB{k=1 Single chunk?}
-    BB -->|Yes| CC[top_index = np.argmax similarities]
-    BB -->|No| DD[top_indices = np.argsort similarities[-k:][::-1]]
+    S --> U[LLM Call: Response Generation]
+    T --> V[Combine Chunks]
+    V --> U
     
-    CC --> EE[Return: chunks[top_index]]
-    DD --> FF[combined_chunks = "\n<->\n".join [chunks[i] for i in top_indices]]
-    FF --> GG[Return: combined_chunks]
-    
-    EE --> HH[LLM CALL #1 - Response Generation]
-    GG --> HH
-    HH --> II[LLM Provider - evaluation/src/rag.py:25-55]
-    II --> JJ[Template: "Question: {{QUESTION}}\nContext: {{CONTEXT}}\n"]
-    JJ --> KK[client.chat.completions.create messages system="Answer based on context..." user=rendered_prompt temperature=0]
-    KK --> LL[Return: "Based on the context, HIIT cardio workouts are most effective for weight loss..."]
-    
-    LL --> MM[Final response with cited sources]
+    U --> W[Generate Final Response]
+    W --> X[Return with Sources]
     
     style A fill:#e1f5fe
-    style J fill:#f3e5f5
-    style N fill:#e8f5e8
-    style T fill:#f3e5f5
-    style X fill:#e8f5e8
-    style HH fill:#fff3e0
+    style H fill:#f3e5f5
+    style J fill:#e8f5e8
+    style N fill:#f3e5f5
+    style P fill:#e8f5e8
+    style U fill:#fff3e0
 ```
 
 ### Advanced RAG Edge Cases
@@ -335,112 +278,59 @@ Agent: Updates preferences, modifies recommendations, stores new context
 
 ```mermaid
 graph TD
-    A[Agent Initialization] --> B[Memory.from_config agent_id="fitness_coach"]
-    B --> C[Load system prompts and tools]
-    C --> D[Session Start - User: "I'm looking for a new workout routine"]
+    A[Agent Initialization] --> B[Load Agent Config]
+    B --> C[Session Start]
+    C --> D[Memory Retrieval: Agent Context]
     
-    D --> E[MEMORY RETRIEVAL - Agent Context]
-    E --> F[Memory Client - search "workout routine preferences" agent_id="fitness_coach" user_id="alice" limit=5]
-    F --> G[EMBEDDING CALL #1 - Query Context Retrieval]
-    G --> H[Embedding Model - embed "workout routine preferences" "search"]
-    H --> I[Return: query_embedding]
+    D --> E[Embedding Call: Query Context]
+    E --> F[Vector Search: User History]
+    F --> G[Apply Agent Filters]
+    G --> H{Graph Memory Enabled?}
     
-    I --> J[VECTOR SEARCH - User History]
-    J --> K[Vector Store - search vectors=query_embedding filters={user_id:"alice", agent_id:"fitness_coach"}]
-    K --> L[Apply agent-specific filters]
-    L --> M[Cosine similarity search with agent context]
-    M --> N["Return: [{memory: 'Prefers morning workouts', score: 0.85}, {memory: 'Has lower back issues', score: 0.78}]"]
+    H -->|Yes| I[Graph Context Retrieval]
+    H -->|No| J[Agent Reasoning Phase]
     
-    N --> O{Graph Memory Enabled?}
-    O -->|Yes| P[GRAPH CONTEXT RETRIEVAL]
-    O -->|No| Q[AGENT REASONING PHASE]
+    I --> K[LLM Call: Entity Extraction]
+    K --> L[Embedding Call: Graph Nodes]
+    L --> M[Neo4j Agent Query]
+    M --> J
     
-    P --> R[Graph Store - search "workout routine" filters={user_id:"alice", agent_id:"fitness_coach"}]
-    R --> S[LLM CALL #1 - Entity Extraction for Agent Context]
-    S --> T[LLM Provider - generate_response tools=[EXTRACT_ENTITIES_TOOL]]
-    T --> U["LLM Response: {entities: [{entity: 'alice', type: 'user'}, {entity: 'workout_routine', type: 'activity'}]}"]
+    J --> N[Combine Contexts]
+    N --> O[Build Agent Prompt]
+    O --> P[LLM Call: Response Generation]
     
-    U --> V[EMBEDDING CALL #2 - Graph Node Search]
-    V --> W[Embedding Model - embed "alice" + embed "workout_routine"]
-    W --> X[Return: node_embeddings]
+    P --> Q[Generate Personalized Response]
+    Q --> R[Memory Storage: Interaction]
+    R --> S[Standard Memory Processing]
     
-    X --> Y[NEO4J AGENT-SCOPED QUERY]
-    Y --> Z[MATCH n:__Entity__ {user_id: "alice", agent_id: "fitness_coach"}]
-    Z --> AA[WHERE vector.similarity.cosine n.embedding, $embedding >= 0.7]
-    AA --> BB[MATCH n-[r]->m RETURN n.name, type r, m.name]
-    BB --> CC["Return: [{source: 'alice', relationship: 'AVOIDS', destination: 'high_impact_exercises'}]"]
+    S --> T[Follow-up Interaction]
+    T --> U[Contextual Memory Update]
+    U --> V[Procedural Memory Creation]
     
-    CC --> Q
-    Q --> DD[Combine retrieved memories + graph context]
-    DD --> EE[Build agent-specific prompt with historical context]
-    EE --> FF[LLM CALL #2 - Agent Response Generation]
+    V --> W[LLM Call: Procedural Memory]
+    W --> X[Embedding Call: Procedural Storage]
+    X --> Y{Graph Update Needed?}
     
-    FF --> GG[LLM Provider - generate_response system_prompt="You are a fitness coach with memory of user preferences..." user_context="User prefers morning workouts, has lower back issues..." current_query="I'm looking for a new workout routine"]
-    GG --> HH[Generate personalized response considering full context]
-    HH --> II[Return: "Based on your preference for morning workouts and your lower back concerns, I recommend..."]
+    Y -->|Yes| Z[Graph Update Operations]
+    Y -->|No| AA[Generate Modified Response]
     
-    II --> JJ[MEMORY STORAGE - Interaction History]
-    JJ --> KK[Memory Client - add [{role: "user", content: "I'm looking for a new workout routine"}, {role: "assistant", content: "Based on your preference..."}] agent_id="fitness_coach" user_id="alice"]
+    Z --> BB[LLM Call: Entity Update]
+    BB --> CC[Neo4j Update Operation]
+    CC --> AA
     
-    KK --> LL[STANDARD MEMORY PROCESSING]
-    LL --> MM[LLM CALL #3 - Fact Extraction]
-    MM --> NN[EMBEDDING CALL #3 - New Memory Encoding]
-    NN --> OO[VECTOR STORAGE - Agent Interaction]
-    
-    OO --> PP[Personalized workout recommendation]
-    PP --> QQ[FOLLOW-UP INTERACTION - User: "That sounds good, but I have a knee injury"]
-    
-    QQ --> RR[CONTEXTUAL MEMORY UPDATE]
-    RR --> SS[Memory Client - search "knee injury workout modifications" agent_id="fitness_coach" user_id="alice"]
-    SS --> TT[PROCEDURAL MEMORY CREATION]
-    TT --> UU[Memory Client - add "User has knee injury, modify recommendations accordingly" agent_id="fitness_coach" user_id="alice" memory_type="procedural_memory"]
-    
-    UU --> VV[LLM CALL #4 - Procedural Memory Generation]
-    VV --> WW[LLM Provider - generate_response system_prompt=PROCEDURAL_MEMORY_SYSTEM_PROMPT]
-    WW --> XX[Return: "When user mentions injury, prioritize low-impact alternatives and consult modification database"]
-    
-    XX --> YY[EMBEDDING CALL #4 - Procedural Memory Storage]
-    YY --> ZZ[Embedding Model - embed procedural_memory_text "add"]
-    ZZ --> AAA[Return: procedural_embedding]
-    
-    AAA --> BBB[VECTOR STORAGE - Procedural Knowledge]
-    BBB --> CCC[Vector Store - insert procedural_embedding metadata={type: "procedural", agent_id: "fitness_coach"}]
-    CCC --> DDD[Stored]
-    
-    DDD --> EEE{Graph Update for Injury Context?}
-    EEE -->|Yes| FFF[GRAPH UPDATE - New Relationship]
-    EEE -->|No| GGG[LLM CALL #6 - Modified Recommendation]
-    
-    FFF --> HHH[Graph Store - add "Alice has knee injury affecting workout choices"]
-    HHH --> III[LLM CALL #5 - Entity/Relationship Update]
-    III --> JJJ[LLM Provider - generate_response tools=[UPDATE_MEMORY_TOOL_GRAPH]]
-    JJJ --> KKK["LLM Response: {source: 'alice', relationship: 'HAS_CONDITION', destination: 'knee_injury'}"]
-    
-    KKK --> LLL[NEO4J UPDATE OPERATION]
-    LLL --> MMM[MATCH alice:Person {name: "alice", user_id: "alice"}]
-    MMM --> NNN[MERGE injury:Condition {name: "knee_injury"}]
-    NNN --> OOO[MERGE alice-[r:HAS_CONDITION]->injury]
-    OOO --> PPP[SET r.created = timestamp, r.agent_context = "fitness_coach"]
-    
-    PPP --> GGG
-    GGG --> QQQ[LLM Provider - generate_response updated_context_with_injury]
-    QQQ --> RRR[Return: "Given your knee injury, let me modify those recommendations..."]
-    
-    RRR --> SSS[Updated workout plan considering knee injury]
+    AA --> DD[Final Response]
     
     style A fill:#e1f5fe
-    style G fill:#f3e5f5
-    style J fill:#e8f5e8
-    style P fill:#fce4ec
-    style S fill:#fff3e0
-    style V fill:#f3e5f5
-    style FF fill:#fff3e0
-    style NN fill:#f3e5f5
-    style VV fill:#fff3e0
-    style YY fill:#f3e5f5
-    style FFF fill:#fce4ec
-    style III fill:#fff3e0
-    style GGG fill:#fff3e0
+    style E fill:#f3e5f5
+    style F fill:#e8f5e8
+    style I fill:#fce4ec
+    style K fill:#fff3e0
+    style L fill:#f3e5f5
+    style P fill:#fff3e0
+    style W fill:#fff3e0
+    style X fill:#f3e5f5
+    style Z fill:#fce4ec
+    style BB fill:#fff3e0
 ```
 
 ### Advanced Agentic Edge Cases
@@ -560,34 +450,97 @@ class FitnessEcosystem:
 
 ```mermaid
 graph TD
-    A[Concurrent Memory Operations] --> B[User Session 1: add "I love running" user_id="alice"]
-    A --> C[User Session 2: add "I hate running" user_id="alice"]
+    A[Concurrent Operations] --> B[User Session 1]
+    A --> C[User Session 2]
     
-    B --> D[Memory System - Race condition detected]
+    B --> D[Memory System]
     C --> D
-    D --> E[Coordination Layer - acquire_lock user_id="alice"]
-    E --> F[Lock acquired for session 1]
+    D --> E[Detect Race Condition]
     
-    F --> G[Process session 1 memory]
-    G --> H[Vector Store - Memory stored]
-    H --> I[Release lock user_id="alice"]
-    I --> J[Queue session 2]
-    J --> K[Lock acquired for session 2]
+    E --> F[Coordination Layer]
+    F --> G[Acquire Lock Session 1]
+    G --> H[Process Session 1]
     
-    K --> L[Check for conflicts with existing memories]
-    L --> M[Vector Store - Conflict detected: contradictory preferences]
-    M --> N[Invoke conflict resolution LLM]
-    N --> O[LLM analyzes temporal context and resolves contradiction]
-    O --> P[Store resolved memory with conflict metadata]
-    P --> Q[Release lock user_id="alice"]
+    H --> I[Update Vector Store]
+    I --> J[Release Lock]
+    J --> K[Queue Session 2]
+    
+    K --> L[Acquire Lock Session 2]
+    L --> M[Check Conflicts]
+    M --> N{Conflict Detected?}
+    
+    N -->|Yes| O[Conflict Resolution LLM]
+    N -->|No| P[Process Normally]
+    
+    O --> Q[Analyze Context]
+    Q --> R[Resolve Contradiction]
+    R --> S[Store with Metadata]
+    
+    P --> T[Store Memory]
+    S --> U[Release Lock]
+    T --> U
+    
+    U --> V[Session Complete]
     
     style A fill:#ffcdd2
-    style D fill:#fff3e0
-    style E fill:#e8f5e8
-    style N fill:#fff3e0
+    style E fill:#fff3e0
+    style F fill:#e8f5e8
+    style O fill:#fff3e0
 ```
 
 ### 4.2 Memory Consistency Across Vector and Graph Stores
+
+```mermaid
+graph TD
+    A[Memory Operation] --> B[Generate Transaction ID]
+    B --> C[Prepare Vector Operation]
+    C --> D{Vector Store Ready?}
+    
+    D -->|Yes| E[Prepare Graph Operation]
+    D -->|No| F[Vector Prep Failed]
+    
+    E --> G{Graph Store Enabled?}
+    G -->|Yes| H{Graph Store Ready?}
+    G -->|No| I[Skip Graph Operation]
+    
+    H -->|Yes| J[Both Stores Ready]
+    H -->|No| K[Graph Prep Failed]
+    
+    I --> L[Vector Only Ready]
+    J --> M[Commit Vector Operation]
+    L --> N[Commit Vector Operation]
+    
+    M --> O[Commit Graph Operation]
+    N --> P[Vector Commit Success]
+    
+    O --> Q{Both Success?}
+    Q -->|Yes| R[Transaction Complete]
+    Q -->|No| S[Rollback Vector]
+    
+    F --> T[Rollback All]
+    K --> U[Rollback Vector]
+    
+    S --> V[Rollback Graph]
+    U --> W[Rollback Prep]
+    
+    V --> X[Consistency Error]
+    W --> X
+    T --> X
+    
+    P --> Y[Vector Only Success]
+    R --> Z[Full Success]
+    
+    X --> AA[Emergency Rollback]
+    AA --> BB[Handle Failure]
+    
+    style A fill:#e1f5fe
+    style B fill:#fff3e0
+    style J fill:#e8f5e8
+    style L fill:#ffcc80
+    style R fill:#c8e6c9
+    style X fill:#ffcdd2
+    style Z fill:#a5d6a7
+```
 
 ```python
 # Location: mem0/memory/main.py:300-400
@@ -629,31 +582,26 @@ def ensure_vector_graph_consistency(self, memory_operation):
 graph TD
     A[Migration Manager] --> B[Retrieve All Memories]
     B --> C{Memory Count > 0?}
-    C -->|Yes| D[Create Batches of 100]
+    C -->|Yes| D[Create Batches]
     C -->|No| E[Migration Complete]
     
     D --> F[Process Batch]
-    F --> G[For Each Memory in Batch]
-    G --> H[Extract Old Embedding]
-    H --> I[Generate New Embedding]
-    I --> J[Update Vector Store]
-    J --> K[Add Migration Metadata]
-    K --> L{More Memories?}
-    L -->|Yes| G
-    L -->|No| M{More Batches?}
-    M -->|Yes| F
-    M -->|No| N[Update System Config]
+    F --> G[Extract Old Embedding]
+    G --> H[Generate New Embedding]
+    H --> I[Update Vector Store]
+    I --> J{More Batches?}
     
-    N --> O[Update Model Name]
-    O --> P[Update Model Version]
-    P --> Q[Cleanup Migration Artifacts]
-    Q --> E
+    J -->|Yes| F
+    J -->|No| K[Update System Config]
+    
+    K --> L[Cleanup Artifacts]
+    L --> E
     
     style A fill:#e1f5fe
     style E fill:#c8e6c9
     style F fill:#fff3e0
-    style I fill:#f3e5f5
-    style J fill:#e8f5e8
+    style H fill:#f3e5f5
+    style I fill:#e8f5e8
 ```
 
 ### 4.4 Graph Store Scalability Edge Cases
@@ -666,48 +614,33 @@ graph TD
     C -->|Yes| D[Large Graph Mode]
     C -->|No| E[Standard Graph Mode]
     
-    D --> F[Set Batch Size = 50]
-    F --> G[Enable Parallel Processing]
-    G --> H[Enable Write Transaction Batching]
+    D --> F[Batch Size = 50]
+    E --> G[Batch Size = 200]
     
-    E --> I[Set Batch Size = 200]
-    I --> J[Disable Parallel Processing]
+    F --> H[Enable Parallel Processing]
+    G --> I[Sequential Processing]
     
-    H --> K[Create Entity Batches]
-    J --> K
+    H --> J[ThreadPoolExecutor]
+    I --> K[Process Batches]
     
-    K --> L{Use Parallel Processing?}
-    L -->|Yes| M[ThreadPoolExecutor]
-    L -->|No| N[Sequential Processing]
+    J --> L[Submit Batch Tasks]
+    L --> M[Wait for Completion]
     
-    M --> O[Submit Batch Tasks]
-    O --> P[Process Batch 1]
-    O --> Q[Process Batch 2]
-    O --> R[Process Batch N]
+    K --> N{More Batches?}
+    N -->|Yes| K
+    N -->|No| O[Operation Complete]
     
-    P --> S[Wait for All Futures]
-    Q --> S
-    R --> S
+    M --> P{Any Failures?}
+    P -->|Yes| Q[Retry Logic]
+    P -->|No| O
     
-    N --> T[Process Each Batch]
-    T --> U{More Batches?}
-    U -->|Yes| T
-    U -->|No| V[Operation Complete]
-    
-    S --> W[Check Future Results]
-    W --> X{Any Failures?}
-    X -->|Yes| Y[Log Errors]
-    X -->|No| V
-    Y --> Z[Implement Retry Logic]
-    Z --> V
+    Q --> O
     
     style A fill:#e1f5fe
     style D fill:#ffebee
     style E fill:#e8f5e8
-    style M fill:#fff3e0
-    style N fill:#f3e5f5
-    style V fill:#c8e6c9
-    style Y fill:#ffcdd2
+    style J fill:#fff3e0
+    style O fill:#c8e6c9
 ```
 
 ---
