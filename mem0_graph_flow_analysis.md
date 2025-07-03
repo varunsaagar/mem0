@@ -26,8 +26,8 @@ System: Retrieves relevant memories and responds
 
 ```mermaid
 graph TD
-    A[User Input] --> B[Memory.add()]
-    B --> C[parse_messages()]
+    A[User Input] --> B[Memory.add]
+    B --> C[parse_messages]
     C --> D[build_filters_and_metadata]
     D --> E[LLM Call: Fact Extraction]
     
@@ -75,7 +75,7 @@ graph TD
 
 ```mermaid
 graph TD
-    A[User Query] --> B[Memory.search()]
+    A[User Query] --> B[Memory.search]
     B --> C[build_filters_and_metadata]
     C --> D[Embedding Call: Query Encoding]
     
@@ -652,7 +652,7 @@ graph TD
 ```mermaid
 graph TD
     A[Embedding Request] --> B[Generate Cache Key]
-    B --> C[hash(text) + action]
+    B --> C["hash(text) + action"]
     C --> D{Key in Cache?}
     
     D -->|Yes| E[Check TTL]
