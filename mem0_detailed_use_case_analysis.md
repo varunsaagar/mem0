@@ -27,7 +27,7 @@ System: Retrieves relevant memories and responds
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant M as Memory.add()
+    participant M as Memory.add
     participant LLM as LLM Provider
     participant EMB as Embedding Model
     participant VDB as Vector Database
@@ -37,8 +37,8 @@ sequenceDiagram
     U->>M: "I love running outdoors but hate gyms. I prefer morning workouts."
     
     Note over M: mem0/memory/main.py:200-400
-    M->>M: parse_messages()
-    M->>M: _build_filters_and_metadata(user_id="alice")
+    M->>M: parse_messages
+    M->>M: _build_filters_and_metadata
     
     %% LLM INVOCATION #1: Fact Extraction
     Note over M,LLM: LLM CALL #1 - Fact Extraction
@@ -123,7 +123,7 @@ sequenceDiagram
 ```mermaid
 sequenceDiagram
     participant U as User
-    participant M as Memory.search()
+    participant M as Memory.search
     participant EMB as Embedding Model  
     participant VDB as Vector Database
     participant GDB as Graph Database
