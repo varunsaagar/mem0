@@ -621,25 +621,478 @@ def ensure_vector_graph_consistency(self, memory_operation):
         raise
 ```
 
-### 4.3 Embedding Model Migration
+# Mem0 Graph Flow Analysis - From Section 4.3
 
-```python
-# Location: mem0/memory/main.py:950-1000
-class EmbeddingMigrationManager:
-    def migrate_embeddings(self, old_model, new_model):
-        """Migrate existing memories to new embedding model"""
-        
-        # Phase 1: Dual embedding during transition
-        all_memories = self.vector_store.list(limit=10000)
-        
-        batch_size = 100
-        for i in range(0, len(all_memories), batch_size):
-            batch = all_memories[i:i + batch_size]
-            
-            for memory in batch:
-                # Generate new embeddings
-                old_embedding = memory["embedding"]
-                new_embedding = new_model.embed(memory["data"], "add")
-                
-                # Store with migration metadata
-                self.
+## 4.3 Embedding Model Migration
+
+```mermaid
+graph TD
+    A[Migration Manager] --> B[Retrieve All Memories]
+    B --> C{Memory Count > 0?}
+    C -->|Yes| D[Create Batches of 100]
+    C -->|No| E[Migration Complete]
+    
+    D --> F[Process Batch]
+    F --> G[For Each Memory in Batch]
+    G --> H[Extract Old Embedding]
+    H --> I[Generate New Embedding]
+    I --> J[Update Vector Store]
+    J --> K[Add Migration Metadata]
+    K --> L{More Memories?}
+    L -->|Yes| G
+    L -->|No| M{More Batches?}
+    M -->|Yes| F
+    M -->|No| N[Update System Config]
+    
+    N --> O[Update Model Name]
+    O --> P[Update Model Version]
+    P --> Q[Cleanup Migration Artifacts]
+    Q --> E
+    
+    style A fill:#e1f5fe
+    style E fill:#c8e6c9
+    style F fill:#fff3e0
+    style I fill:#f3e5f5
+    style J fill:#e8f5e8
+```
+
+### 4.4 Graph Store Scalability Edge Cases
+
+```mermaid
+graph TD
+    A[Graph Operation Request] --> B[Query Graph Stats]
+    B --> C{Node Count > 1M?}
+    
+    C -->|Yes| D[Large Graph Mode]
+    C -->|No| E[Standard Graph Mode]
+    
+    D --> F[Set Batch Size = 50]
+    F --> G[Enable Parallel Processing]
+    G --> H[Enable Write Transaction Batching]
+    
+    E --> I[Set Batch Size = 200]
+    I --> J[Disable Parallel Processing]
+    
+    H --> K[Create Entity Batches]
+    J --> K
+    
+    K --> L{Use Parallel Processing?}
+    L -->|Yes| M[ThreadPoolExecutor]
+    L -->|No| N[Sequential Processing]
+    
+    M --> O[Submit Batch Tasks]
+    O --> P[Process Batch 1]
+    O --> Q[Process Batch 2]
+    O --> R[Process Batch N]
+    
+    P --> S[Wait for All Futures]
+    Q --> S
+    R --> S
+    
+    N --> T[Process Each Batch]
+    T --> U{More Batches?}
+    U -->|Yes| T
+    U -->|No| V[Operation Complete]
+    
+    S --> W[Check Future Results]
+    W --> X{Any Failures?}
+    X -->|Yes| Y[Log Errors]
+    X -->|No| V
+    Y --> Z[Implement Retry Logic]
+    Z --> V
+    
+    style A fill:#e1f5fe
+    style D fill:#ffebee
+    style E fill:#e8f5e8
+    style M fill:#fff3e0
+    style N fill:#f3e5f5
+    style V fill:#c8e6c9
+    style Y fill:#ffcdd2
+```
+
+---
+
+## 5. Performance Optimization Patterns
+
+### 5.1 Embedding Caching Strategy
+
+```mermaid
+graph TD
+    A[Embedding Request] --> B[Generate Cache Key]
+    B --> C[hash(text) + action]
+    C --> D{Key in Cache?}
+    
+    D -->|Yes| E[Check TTL]
+    D -->|No| F[Generate New Embedding]
+    
+    E --> G{TTL Valid?}
+    G -->|Yes| H[Update Access Time]
+    G -->|No| I[Remove from Cache]
+    
+    H --> J[Return Cached Embedding]
+    I --> F
+    
+    F --> K[Call Embedding Model]
+    K --> L[Get New Embedding]
+    L --> M{Cache Full?}
+    
+    M -->|Yes| N[Find LRU Entry]
+    M -->|No| O[Add to Cache]
+    
+    N --> P[Remove LRU Entry]
+    P --> O
+    
+    O --> Q[Update Access Time]
+    Q --> R[Return New Embedding]
+    
+    J --> S[Cache Hit Success]
+    R --> T[Cache Miss Success]
+    
+    style A fill:#e1f5fe
+    style D fill:#fff3e0
+    style E fill:#f3e5f5
+    style F fill:#ffebee
+    style J fill:#c8e6c9
+    style R fill:#c8e6c9
+    style S fill:#a5d6a7
+    style T fill:#ffcc80
+```
+
+### 5.2 Vector Store Connection Pooling
+
+```mermaid
+graph TD
+    A[Search Request] --> B[Get Connection from Pool]
+    B --> C{Connection Available?}
+    
+    C -->|Yes| D[Acquire Connection]
+    C -->|No| E[Wait for Connection]
+    
+    E --> F{Timeout?}
+    F -->|Yes| G[Connection Timeout Error]
+    F -->|No| D
+    
+    D --> H[Prepare Query Parameters]
+    H --> I[Execute Query - Attempt 1]
+    
+    I --> J{Query Successful?}
+    J -->|Yes| K[Parse Response]
+    J -->|No| L[Check Retry Count]
+    
+    L --> M{Attempts < 3?}
+    M -->|Yes| N[Exponential Backoff]
+    M -->|No| O[Max Retries Exceeded]
+    
+    N --> P[Wait 2^attempt seconds]
+    P --> Q[Execute Query - Retry]
+    Q --> J
+    
+    K --> R[Process Results]
+    R --> S[Return Connection to Pool]
+    
+    O --> T[Query Failed]
+    T --> S
+    G --> U[Handle Connection Error]
+    
+    S --> V[Connection Returned]
+    V --> W[Query Complete]
+    
+    style A fill:#e1f5fe
+    style D fill:#e8f5e8
+    style E fill:#fff3e0
+    style G fill:#ffcdd2
+    style K fill:#f3e5f5
+    style N fill:#ffcc80
+    style O fill:#ffcdd2
+    style R fill:#c8e6c9
+    style W fill:#a5d6a7
+```
+
+### 5.3 Memory Consistency Across Vector and Graph Stores
+
+```mermaid
+graph TD
+    A[Memory Operation] --> B[Generate Transaction ID]
+    B --> C[Prepare Vector Operation]
+    C --> D{Vector Store Ready?}
+    
+    D -->|Yes| E[Prepare Graph Operation]
+    D -->|No| F[Vector Preparation Failed]
+    
+    E --> G{Graph Store Enabled?}
+    G -->|Yes| H{Graph Store Ready?}
+    G -->|No| I[Skip Graph Operation]
+    
+    H -->|Yes| J[Both Stores Ready]
+    H -->|No| K[Graph Preparation Failed]
+    
+    I --> L[Vector Only Ready]
+    J --> M[Commit Vector Operation]
+    L --> N[Commit Vector Operation]
+    
+    M --> O[Commit Graph Operation]
+    N --> P[Vector Commit Success]
+    
+    O --> Q{Both Commits Success?}
+    Q -->|Yes| R[Transaction Complete]
+    Q -->|No| S[Rollback Vector]
+    
+    F --> T[Rollback All Operations]
+    K --> U[Rollback Vector]
+    
+    S --> V[Rollback Graph]
+    U --> W[Rollback Preparation]
+    
+    V --> X[Consistency Error]
+    W --> X
+    T --> X
+    
+    P --> Y[Vector Only Success]
+    R --> Z[Full Transaction Success]
+    
+    X --> AA[Emergency Rollback]
+    AA --> BB[Handle Consistency Failure]
+    
+    style A fill:#e1f5fe
+    style B fill:#fff3e0
+    style J fill:#e8f5e8
+    style L fill:#ffcc80
+    style M fill:#f3e5f5
+    style O fill:#f3e5f5
+    style R fill:#c8e6c9
+    style S fill:#ffcdd2
+    style X fill:#ffcdd2
+    style Z fill:#a5d6a7
+    style AA fill:#d32f2f
+```
+
+### 5.4 Concurrency and Race Conditions
+
+```mermaid
+graph TD
+    A[User Session 1] --> C[Memory System]
+    B[User Session 2] --> C
+    
+    C --> D[Detect Concurrent Operations]
+    D --> E{Same User ID?}
+    
+    E -->|Yes| F[Race Condition Detected]
+    E -->|No| G[Process Independently]
+    
+    F --> H[Coordination Layer]
+    H --> I[Acquire Lock for Session 1]
+    I --> J[Session 1 Processes]
+    
+    J --> K[Update Vector Store]
+    K --> L[Release Lock]
+    L --> M[Queue Session 2]
+    
+    M --> N[Acquire Lock for Session 2]
+    N --> O[Check for Conflicts]
+    
+    O --> P{Conflict Detected?}
+    P -->|Yes| Q[Invoke Conflict Resolution]
+    P -->|No| R[Process Normally]
+    
+    Q --> S[LLM Analyzes Context]
+    S --> T[Resolve Contradiction]
+    T --> U[Store with Conflict Metadata]
+    
+    R --> V[Store Memory]
+    U --> W[Release Lock]
+    V --> W
+    
+    W --> X[Session 2 Complete]
+    
+    G --> Y[Parallel Processing]
+    Y --> Z[Independent Completion]
+    
+    style A fill:#e3f2fd
+    style B fill:#e8f5e8
+    style C fill:#fff3e0
+    style F fill:#ffebee
+    style H fill:#f3e5f5
+    style Q fill:#ffcc80
+    style S fill:#f3e5f5
+    style X fill:#c8e6c9
+    style Z fill:#c8e6c9
+```
+
+### 5.5 Agent Context Management
+
+```mermaid
+graph TD
+    A[Agent Request] --> B[Calculate Context Tokens]
+    B --> C[Get Recent Messages]
+    C --> D[Count Recent Tokens]
+    
+    D --> E[Calculate Remaining Budget]
+    E --> F[Search Relevant Memories]
+    
+    F --> G[Retrieve Top 10 Memories]
+    G --> H[Initialize Memory Processing]
+    
+    H --> I[Process Memory 1]
+    I --> J[Calculate Memory Tokens]
+    J --> K{Tokens Within Budget?}
+    
+    K -->|Yes| L[Add to Context]
+    K -->|No| M[Skip Memory]
+    
+    L --> N{More Memories?}
+    M --> N
+    
+    N -->|Yes| O[Process Next Memory]
+    N -->|No| P[Finalize Context]
+    
+    O --> Q[Process Memory N]
+    Q --> R[Calculate Tokens]
+    R --> S{Budget Remaining?}
+    
+    S -->|Yes| T[Add to Context]
+    S -->|No| U[Stop Processing]
+    
+    T --> V{More Memories?}
+    V -->|Yes| O
+    V -->|No| P
+    
+    U --> P
+    P --> W[Combine Recent + Fitted Memories]
+    W --> X[Return Optimized Context]
+    
+    style A fill:#e1f5fe
+    style B fill:#fff3e0
+    style F fill:#f3e5f5
+    style K fill:#ffcc80
+    style L fill:#e8f5e8
+    style M fill:#ffcdd2
+    style P fill:#c8e6c9
+    style X fill:#a5d6a7
+```
+
+### 5.6 Preference Learning and Adaptation
+
+```mermaid
+graph TD
+    A[User Feedback] --> B[Analyze Feedback Content]
+    B --> C{Feedback Type?}
+    
+    C -->|"too difficult"| D[Extract Difficulty Preference]
+    C -->|"love this"| E[Extract Positive Preference]
+    C -->|Other| F[General Preference Analysis]
+    
+    D --> G[Lower Intensity Preference]
+    E --> H[Positive Workout Preference]
+    F --> I[Custom Preference Extraction]
+    
+    G --> J[Store Preference Update]
+    H --> J
+    I --> J
+    
+    J --> K[Add to Agent Memory]
+    K --> L[Set Metadata]
+    L --> M[Type: preference_learning]
+    M --> N[Confidence: 0.8]
+    
+    N --> O[Generate Procedural Update]
+    O --> P[Create Recommendation Rule]
+    P --> Q[Store Procedural Memory]
+    
+    Q --> R[Update Agent Behavior]
+    R --> S[Apply Learning to Future]
+    
+    S --> T[Preference Learning Complete]
+    
+    style A fill:#e1f5fe
+    style C fill:#fff3e0
+    style D fill:#ffebee
+    style E fill:#e8f5e8
+    style F fill:#f3e5f5
+    style J fill:#ffcc80
+    style O fill:#f3e5f5
+    style R fill:#c8e6c9
+    style T fill:#a5d6a7
+```
+
+### 5.7 Multi-Agent Memory Coordination
+
+```mermaid
+graph TD
+    A[User Query] --> B[Fitness Ecosystem]
+    B --> C[Nutrition Agent]
+    B --> D[Workout Agent]
+    B --> E[Wellness Agent]
+    
+    C --> F[Get Nutrition Context]
+    D --> G[Get Workout Context]
+    E --> H[Get Wellness Context]
+    
+    F --> I[Retrieve Nutrition Memories]
+    G --> J[Retrieve Workout Memories]
+    H --> K[Retrieve Wellness Memories]
+    
+    I --> L[Cross-Agent Context Sharing]
+    J --> L
+    K --> L
+    
+    L --> M[Combine All Contexts]
+    M --> N[Generate Coordinated Response]
+    
+    N --> O[Nutrition Component]
+    N --> P[Fitness Component]
+    N --> Q[Wellness Component]
+    
+    O --> R[Final Integrated Response]
+    P --> R
+    Q --> R
+    
+    R --> S[Store Cross-Agent Interaction]
+    S --> T[Update Shared Memory]
+    
+    T --> U[Set Interaction Metadata]
+    U --> V[Type: multi_agent]
+    V --> W[Agents: nutrition, fitness, wellness]
+    
+    W --> X[Coordination Complete]
+    
+    style A fill:#e1f5fe
+    style B fill:#fff3e0
+    style C fill:#e8f5e8
+    style D fill:#f3e5f5
+    style E fill:#ffcc80
+    style L fill:#ffebee
+    style M fill:#e1f5fe
+    style R fill:#c8e6c9
+    style X fill:#a5d6a7
+```
+
+---
+
+## Conclusion
+
+This graph-based analysis demonstrates how Mem0 orchestrates complex interactions between LLMs, embeddings, vector databases, and graph stores across different use cases. Key technical insights:
+
+### **LLM Invocation Patterns:**
+- **Normal Prompt**: 2 LLM calls (fact extraction + memory decisions)
+- **RAG**: 1 LLM call (response generation with context)  
+- **Agentic**: 4-6 LLM calls (context retrieval + reasoning + procedural memory + updates)
+
+### **Embedding Operations:**
+- **Vector encoding**: 2-4 calls per memory operation
+- **Graph node encoding**: Additional calls for entity embeddings
+- **Query encoding**: 1 call per search operation
+- **Caching**: Smart reuse for performance optimization
+
+### **Vector Database Usage:**
+- **Batch operations**: Optimized for throughput
+- **Hybrid search**: Dense + sparse vector combination
+- **Multi-tenant filtering**: Proper data isolation
+- **Connection pooling**: Production-ready scalability
+
+### **Graph Operations:**
+- **Entity extraction**: LLM-powered knowledge graph construction
+- **Relationship modeling**: Complex semantic relationships
+- **Vector similarity**: Hybrid vector-graph search
+- **BM25 reranking**: Improved relevance scoring
+
+The architecture handles production-level edge cases including concurrency, consistency, migration, and scalability while maintaining flexibility across diverse use cases.
